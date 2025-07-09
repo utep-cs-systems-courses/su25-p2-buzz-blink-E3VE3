@@ -1,0 +1,13 @@
+    .text
+    .global next_state_asm
+    .extern state
+
+next_state_asm:
+    mov &state, r12
+    cmp #0, r12         ; If IDLE
+    jne switch_to_idle
+    mov #1, &state      ; Else: set to FEED
+    ret
+switch_to_idle:
+    mov #0, &state
+    ret
