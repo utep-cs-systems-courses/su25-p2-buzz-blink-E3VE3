@@ -3,20 +3,32 @@
 
 #define LED_RED BIT0
 #define LED_GREEN BIT6
+
 #define BUTTON1 BIT0
 #define BUTTON2 BIT1
 #define BUTTON3 BIT2
 #define BUTTON4 BIT3
-#define BUTTON_PORT P2IN
-#define BUTTON_REN P2REN
-#define BUTTON_OUT P2OUT
-#define BUTTON_DIR P2DIR
+#define BUTTONS (BUTTON1 | BUTTON2 | BUTTON3 | BUTTON4)
+
 #define BUZZER BIT6
+// State definitions
+typedef enum {
+  STATE_OFF,
+  STATE_RED_ON,
+  STATE_GREEN_ON,
+  STATE_RED_TOGGLE,
+  STATE_GREEN_TOGGLE
+} State;
+
+volatile State current_state = STATE_OFF;
 
 void init_buttons(){
-  P1REN |= BUTTON1 | BUTTON2 | BUTTON3 | BUTTON4;
-  P1OUT |= BUTTON1 | BUTTON2 | BUTTON3 | BUTTON4;
-  P1DIR &= ~(BUTTON1 | BUTTON2 | BUTTON3 | BUTTON4);
+  P2REN |= BUTTONS;         // Enable pull-up/pull-down resistors
+  P2OUT |= BUTTONS;         // Set resistors as pull-up
+  P2DIR &= ~BUTTONS;        // Set as input
+  P2IE |= BUTTONS;          // Enable interrupts
+  P2IES |= BUTTONS;         // Interrupt on high-to-low
+  P2IFG &= ~BUTTONS;        // Clear flags
 }
 void init_leds(){
   P1DIR |= LED_RED | LED_GREEN;
@@ -35,37 +47,56 @@ void stop_buzzer(){
   CCR1 = 0;
 }
 int main(void){
-  WDTCTL = WDTPW | WDTHOLD;
-  BCSCTL3 = LFXT1S_2;
-  BCSCTL1 = CALBC1_1MHZ;
-  DCOCTL = CALDCO_1MHZ;
-  enableWDTInterrupts();
+  WDTCTL = WDTPW | WDTHOLD;     // Stop watchdog timer // Main
   configureClocks();
-  init_buzzer();
+  enableWDTInterrupts();
   init_leds();
+  init_buzzer();
+  init_buttons();
 
-  or_sr(0x8);
+  or_sr(0x18); // GIE + CPU off
 
-  while(1){
-    if(!(BUTTON_PORT & BUTTON1)){
+  return 0;
+}
+// Interrupt: Watchdog Timer -> handles current state behavior
+void __interrupt_vec(WDT_VECTOR) WDT(){
+  switch(current_state){
+    case STATE_OFF:
+      P1OUT &= ~(LED_RED | LED_GREEN);
+      stop_buzzer();
+      break;
+    case STATE_RED_ON:
       P1OUT |= LED_RED;
       P1OUT &= ~LED_GREEN;
       buzzer_set_period(1000);
-    }else if (!(BUTTON_PORT & BUTTON2)){
+      break;
+    case STATE_GREEN_ON:
       P1OUT |= LED_GREEN;
       P1OUT &= ~LED_RED;
-      buzzer_set_period(2000);  
-    }else if (!(BUTTON_PORT & BUTTON3)){
+      buzzer_set_period(2000);
+      break;
+    case STATE_RED_TOGGLE:
       P1OUT ^= LED_RED;
       buzzer_set_period(1500);
-      __delay_cycles(100000);
-    }else if (!(BUTTON_PORT & BUTTON4)){
+      break;
+    case STATE_GREEN_TOGGLE:
       P1OUT ^= LED_GREEN;
       buzzer_set_period(2500);
-      __delay_cycles(100000);
-    }else{
-      P1OUT &= ~(LED_RED | LED_GREEN);
-      stop_buzzer();
-    }
+      break;
+  }
 }
+// Interrupt: Port 2 (buttons)
+void __interrupt_vec(PORT2_VECTOR) Port_2(){
+  if (P2IFG & BUTTON1){
+    current_state = STATE_RED_ON;
+  } else if (P2IFG & BUTTON2){
+    current_state = STATE_GREEN_ON;
+  } else if (P2IFG & BUTTON3){
+    current_state = STATE_RED_TOGGLE;
+  } else if (P2IFG & BUTTON4){
+    current_state = STATE_GREEN_TOGGLE;
+  }
+
+  // Clear all interrupt flags
+  P2IFG &= ~BUTTONS;
 }
