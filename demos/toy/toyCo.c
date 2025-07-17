@@ -36,7 +36,9 @@ void init_leds(){
 }
 void init_buzzer(){
   P2DIR |= BUZZER;
+  P2SEL &= ~BIT7;
   P2SEL |= BUZZER;
+  P2SEL2 &= ~BUZZER;
 }
 void buzzer_set_period(short cycles){
   CCR0 = cycles;
@@ -49,6 +51,7 @@ void stop_buzzer(){
 int main(void){
   WDTCTL = WDTPW | WDTHOLD;     // Stop watchdog timer // Main
   configureClocks();
+  timerAUpmode();
   enableWDTInterrupts();
   init_leds();
   init_buzzer();
